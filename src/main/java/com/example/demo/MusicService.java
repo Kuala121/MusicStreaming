@@ -18,7 +18,7 @@ public class MusicService {
     
     public boolean play(String filename) {
         try {
-            File file = new File(musicFolderPath + filename + ".mp3");
+            File file = new File(musicFolderPath + "/" + filename + ".mp3");
             if (!file.exists()) {
                 System.out.println("파일 없음: " + file.getAbsolutePath());
                 return false;
