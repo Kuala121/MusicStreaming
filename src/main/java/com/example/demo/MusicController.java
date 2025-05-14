@@ -2,6 +2,8 @@ package com.example.demo;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.File;
@@ -35,14 +37,37 @@ public class MusicController {
     }
 
     @PostMapping("/play")
-    public String playMusic(@RequestParam("filename") String filename) {
-        boolean success = musicService.play(filename);
-        return success ? "재생 시작" : "파일을 찾을 수 없습니다.";
+    public ResponseEntity<String> playMusic(@RequestParam("filename") String filename) {
+        PlayResult result = musicService.play(filename);
+
+        if (result.isSuccess()) {
+            return ResponseEntity.ok(result.getMessage());
+        }
+
+        String message = result.getMessage();
+        if (message.contains("이미 음악이 재생 중")) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(message); // 409
+        } else if (message.contains("파일이 존재하지 않습니다")) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(message); // 404
+        } else {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(message); // 500
+        }
     }
 
     @PostMapping("/stop")
-    public String stopMusic() {
+    public ResponseEntity<String> stopMusic() {
         boolean success = musicService.stop();
-        return success ? "재생 중지" : "재생 중인 음악이 없습니다.";
+        return success ?
+                ResponseEntity.ok("재생 중지") :
+                ResponseEntity.status(HttpStatus.CONFLICT).body("재생 중인 음악이 없습니다.");
+    }
+
+    @GetMapping("/status")
+    public ResponseEntity<String> getStatus() {
+        if (musicService.isPlaying()) {
+            return ResponseEntity.ok("재생 중: " + musicService.getCurrentPlayingFile());
+        } else {
+            return ResponseEntity.ok("재생 중인 음악이 없습니다.");
+        }
     }
 }
