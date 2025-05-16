@@ -8,6 +8,8 @@ import javax.sound.sampled.*;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.util.LinkedList;
+import java.util.Queue;
 
 @Service
 public class MusicService {
@@ -21,15 +23,37 @@ public class MusicService {
     @Value("${music.folder.path}")
     private String musicFolderPath;
 
+    private final Queue<String> playQueue = new LinkedList<>();
+
+    @Value("${music.queue.max-size:20}")
+    private int MAX_QUEUE_SIZE;
+
     public synchronized PlayResult play(String filename) {
-        try {
-            if (playing) {
-                return new PlayResult(false, "이미 음악이 재생 중입니다: " + currentPlayingFile);
+        if (playing) {
+        	if (!isValidMusicFile(filename)) {
+                return new PlayResult(false, "파일이 존재하지 않아 큐에 추가할 수 없습니다.");
+            }
+            if (playQueue.size() >= MAX_QUEUE_SIZE) {
+                return new PlayResult(false, "재생 대기열이 가득 찼습니다.");
+            }
+            filename = normalizeFilename(filename);
+            if (playQueue.contains(filename)) {
+                return new PlayResult(false, "이미 큐에 존재합니다: " + filename);
             }
 
-            if (!filename.endsWith(".mp3") && !filename.endsWith(".wav")) {
-                filename += ".mp3";
+            playQueue.add(filename);
+            return new PlayResult(true, "현재 재생 중입니다. 큐에 추가됨: " + filename);
+        }
+
+        return startPlaying(filename);
+    }
+
+    private PlayResult startPlaying(String filename) {
+        try {
+        	if (!isValidMusicFile(filename)) {
+                return new PlayResult(false, "파일이 존재하지 않습니다: " + filename);
             }
+        	filename = normalizeFilename(filename);
 
             File file = new File(musicFolderPath + "/" + filename);
             if (!file.exists()) {
@@ -39,16 +63,14 @@ public class MusicService {
             // mp3 재생
             if (filename.endsWith(".mp3")) {
                 FileInputStream fis = new FileInputStream(file);
-                this.mp3Player = new Player(fis);
-                playing = true;
-                currentPlayingFile = filename;
+                mp3Player = new Player(fis);
                 new Thread(() -> {
                     try {
                         mp3Player.play();
                     } catch (Exception e) {
                         e.printStackTrace();
                     } finally {
-                        stop(); // 끝나면 정리
+                        onFinish();
                     }
                 }).start();
             }
@@ -58,16 +80,16 @@ public class MusicService {
                 AudioInputStream audioStream = AudioSystem.getAudioInputStream(file);
                 wavClip = AudioSystem.getClip();
                 wavClip.open(audioStream);
-                playing = true;
-                currentPlayingFile = filename;
                 wavClip.start();
                 wavClip.addLineListener(event -> {
                     if (event.getType() == LineEvent.Type.STOP) {
-                        stop(); // 끝나면 정리
+                        onFinish();
                     }
                 });
             }
 
+            currentPlayingFile = filename;
+            playing = true;
             return new PlayResult(true, "재생 시작: " + filename);
 
         } catch (UnsupportedAudioFileException | IOException | LineUnavailableException e) {
@@ -79,6 +101,35 @@ public class MusicService {
         }
     }
 
+    private synchronized void onFinish() {
+        while (!playQueue.isEmpty()) {
+            String next = playQueue.poll();
+            if (isValidMusicFile(next)) {
+                startPlaying(next);
+                return;
+            }
+        }
+        playing = false;
+        currentPlayingFile = null;
+        
+        if (playQueue.isEmpty()) {
+            playing = false;
+            currentPlayingFile = null;
+        }
+    }
+    
+    public synchronized boolean removeFromQueue(String filename) {
+        return playQueue.remove(filename);
+    }
+
+    private boolean isValidMusicFile(String filename) {
+        if (!filename.endsWith(".mp3") && !filename.endsWith(".wav")) {
+            filename += ".mp3";
+        }
+        File file = new File(musicFolderPath + "/" + filename);
+        return file.exists();
+    }
+    
     public synchronized boolean stop() {
         boolean stopped = false;
 
@@ -109,5 +160,20 @@ public class MusicService {
 
     public String getCurrentPlayingFile() {
         return currentPlayingFile;
+    }
+
+    public Queue<String> getPlayQueue() {
+        return new LinkedList<>(playQueue); // 복사본 반환 (직접 수정 방지)
+    }
+
+    public int getMaxQueueSize() {
+        return MAX_QUEUE_SIZE;
+    }
+    
+    private String normalizeFilename(String filename) {
+        if (!filename.endsWith(".mp3") && !filename.endsWith(".wav")) {
+            return filename + ".mp3"; // 기본 확장자
+        }
+        return filename;
     }
 }

@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.io.File;
 import java.util.Arrays;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -69,5 +70,16 @@ public class MusicController {
         } else {
             return ResponseEntity.ok("재생 중인 음악이 없습니다.");
         }
+    }
+    
+    @GetMapping("/queue")
+    public List<String> getQueue() {
+        return new LinkedList<>(musicService.getPlayQueue());
+    }
+    
+    @PostMapping("/queue/remove")
+    public String removeFromQueue(@RequestParam("filename") String filename) {
+        boolean removed = musicService.removeFromQueue(filename);
+        return removed ? "큐에서 제거됨: " + filename : "큐에 해당 파일이 없습니다.";
     }
 }
